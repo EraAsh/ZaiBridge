@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import uuid
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Body, Response, Cookie, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -165,15 +166,81 @@ async def clear_logs(db: AsyncSession = Depends(get_db)):
 
 # --- Config ---
 
+class ConfigUpdate(BaseModel):
+    retry_count: int
+
+@router.post("/config", dependencies=[Depends(verify_admin)])
+async def update_config(config: ConfigUpdate, db: AsyncSession = Depends(get_db)):
+    stmt = select(SystemConfig).where(SystemConfig.key == "retry_count")
+    result = await db.execute(stmt)
+    sys_config = result.scalar_one_or_none()
+    
+    if sys_config:
+        sys_config.value = str(config.retry_count)
+    else:
+        sys_config = SystemConfig(key="retry_count", value=str(config.retry_count))
+        db.add(sys_config)
+    
+    await db.commit()
+    return {"retry_count": config.retry_count}
+
 @router.get("/config", dependencies=[Depends(verify_admin)])
-async def get_config():
+async def get_config(db: AsyncSession = Depends(get_db)):
+    # Get dynamic config
+    retry_count_val = await db.scalar(select(SystemConfig.value).where(SystemConfig.key == "retry_count"))
+    retry_count = int(retry_count_val) if retry_count_val else settings.ZAI_RETRY_COUNT
+
     return {
         "PROJECT_NAME": settings.PROJECT_NAME,
         "DATABASE_URL": settings.DATABASE_URL,
         "ZAI_BASE_URL": settings.ZAI_BASE_URL,
         "TOKEN_REFRESH_INTERVAL": settings.TOKEN_REFRESH_INTERVAL,
-        "ZAI_TOKEN_TTL": settings.ZAI_TOKEN_TTL
+        "ZAI_TOKEN_TTL": settings.ZAI_TOKEN_TTL,
+        "retry_count": retry_count
     }
+
+# --- API Keys ---
+
+class ApiKeyCreate(BaseModel):
+    name: str
+
+class ApiKeyResponse(BaseModel):
+    id: int
+    key: str
+    name: str | None
+    is_active: bool
+    created_at: Any
+
+    class Config:
+        from_attributes = True
+
+@router.get("/api-keys", response_model=list[ApiKeyResponse], dependencies=[Depends(verify_admin)])
+async def get_api_keys(db: AsyncSession = Depends(get_db)):
+    stmt = select(ApiKey).order_by(desc(ApiKey.created_at))
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.post("/api-keys", response_model=ApiKeyResponse, dependencies=[Depends(verify_admin)])
+async def create_api_key(key_data: ApiKeyCreate, db: AsyncSession = Depends(get_db)):
+    new_key_str = f"sk-zai-{uuid.uuid4()}"
+    new_key = ApiKey(key=new_key_str, name=key_data.name)
+    db.add(new_key)
+    await db.commit()
+    await db.refresh(new_key)
+    return new_key
+
+@router.delete("/api-keys/{key_id}", dependencies=[Depends(verify_admin)])
+async def delete_api_key(key_id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(ApiKey).where(ApiKey.id == key_id)
+    result = await db.execute(stmt)
+    api_key = result.scalar_one_or_none()
+    
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API Key not found")
+        
+    await db.delete(api_key)
+    await db.commit()
+    return {"status": "success"}
 
 # --- Zai Tokens ---
 

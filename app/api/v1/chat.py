@@ -24,8 +24,7 @@ security = HTTPBearer()
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Security(security), db: AsyncSession = Depends(get_db)):
     token = credentials.credentials
     if not token.startswith("sk-zai-"):
-         # Optional: Allow skipping check if no keys defined? No, strict mode.
-         pass
+         raise HTTPException(status_code=401, detail="Invalid API Key format. Key must start with 'sk-zai-'.")
          
     stmt = select(ApiKey).where(ApiKey.key == token, ApiKey.is_active == True)
     result = await db.execute(stmt)
@@ -122,16 +121,7 @@ async def chat_completions(
             result = await get_valid_zai_token(db)
             
             if not result:
-                if attempt < max_retries:
-                    # Wait a bit before retrying if no tokens? Or just fail?
-                    # If no tokens, maybe we should just fail immediately as retrying won't help unless refresh happens
-                    # But maybe refresh happens in background.
-                    # Let's verify if we should fail or wait.
-                    # For now, if no tokens, we probably can't do much.
-                    await log_request(db, request.model, "N/A", 429, (time.time() - start_time) * 1000, "No available tokens")
-                    raise HTTPException(status_code=429, detail="No available tokens or rate limit exceeded.")
-                else:
-                     raise HTTPException(status_code=429, detail="No available tokens or rate limit exceeded.")
+                 raise HTTPException(status_code=429, detail="No available tokens or rate limit exceeded.")
             
             token, token_hash = result
             zai_client = ZaiClient(token)
