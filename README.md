@@ -105,7 +105,9 @@ curl http://localhost:5000/v1/chat/completions \
     *   调整 Token 刷新间隔。
 3.  **请求日志**：
     *   查看最近的 API 请求记录。
+## Star History
 
+[![Star History Chart](https://api.star-history.com/svg?repos=Futureppo/zai.is2api&type=date&legend=top-left)](https://www.star-history.com/#Futureppo/zai.is2api&type=date&legend=top-left)
 ## ⚠️ 免责声明
 
 本项目仅供逆向学习和研究使用。使用者应自行承担使用本工具产生的所有风险和责任。请遵守相关服务条款。
