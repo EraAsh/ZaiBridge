@@ -118,6 +118,10 @@ def _mask_token(value: str | None, head: int = 12, tail: int = 6) -> str | None:
         return value
     return f"{value[:head]}...{value[-tail:]}"
 
+def _dt_iso(dt):
+    """统一的时间序列化，去掉微秒，便于前端解析显示。"""
+    return dt.replace(microsecond=0).isoformat() if dt else None
+
 # Database Initialization
 def init_db():
     with app.app_context():
@@ -238,13 +242,14 @@ def api_stats():
 @api_auth_required
 def get_tokens():
     tokens = Token.query.all()
+    config = SystemConfig.query.first()
     result = []
     for t in tokens:
         result.append({
             'id': t.id,
             'email': t.email,
             'is_active': t.is_active,
-            'at_expires': t.at_expires.isoformat() if t.at_expires else None,
+            'at_expires': _dt_iso(t.at_expires),
             'credits': t.credits,
             'user_paygate_tier': t.user_paygate_tier,
             'current_project_name': t.current_project_name,
@@ -263,8 +268,15 @@ def get_tokens():
             # Let's return full ST for now as admin panel.
         })
         # Add full ST if requested or for admin
-        result[-1]['st'] = t.discord_token 
-    return jsonify(result)
+        result[-1]['st'] = t.discord_token
+    # Add system config for frontend use (token refresh interval)
+    response_data = {
+        'tokens': result,
+        'config': {
+            'token_refresh_interval': config.token_refresh_interval if config else 3600
+        }
+    }
+    return jsonify(response_data)
 
 @app.route('/api/tokens', methods=['POST'])
 @api_auth_required
@@ -337,8 +349,8 @@ def refresh_all_tokens_endpoint():
 def refresh_token_at(id):
     success, msg = services.update_token_info(id)
     if success:
-        token = Token.query.get(id)
-        return jsonify({'success': True, 'token': {'at_expires': token.at_expires.isoformat() if token.at_expires else None}})
+        token = db.session.get(Token, id)
+        return jsonify({'success': True, 'token': {'at_expires': _dt_iso(token.at_expires)}})
     return jsonify({'success': False, 'detail': msg})
 
 @app.route('/api/tokens/<int:id>/refresh-credits', methods=['POST'])
@@ -352,7 +364,7 @@ def refresh_token_credits(id):
     # For now, stub it or just call update_token_info.
     success, msg = services.update_token_info(id)
     if success:
-        token = Token.query.get(id)
+        token = db.session.get(Token, id)
         return jsonify({'success': True, 'credits': token.credits})
     return jsonify({'success': False, 'detail': msg})
 
@@ -472,6 +484,27 @@ def proxy_config():
         if 'proxy_url' in data: config.proxy_url = data['proxy_url']
         db.session.commit()
         return jsonify({'success': True})
+
+@app.route('/update_token_info', methods=['POST'])
+def update_token_info():
+    """更新 Zai Token 信息（通过 OAuth 登录）"""
+    try:
+        # 使用新的 OAuth 登录函数
+        result = services.create_or_update_token_from_oauth()
+        
+        if result.get('success'):
+            return jsonify({
+                'success': True,
+                'message': f"Token 更新成功！类型: {result.get('source', 'unknown')}",
+                'email': result.get('email'),
+                'expires': result.get('expires')
+            })
+        else:
+            return jsonify({'error': result.get('error', '未知错误')}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/logs', methods=['GET'])
 @api_auth_required
@@ -601,7 +634,7 @@ def import_tokens():
 def test_token(id):
     # Test by refreshing
     success, msg = services.update_token_info(id)
-    token = Token.query.get(id)
+    token = db.session.get(Token, id)
     if success:
         return jsonify({
             'success': True, 

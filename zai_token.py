@@ -13,6 +13,9 @@ import requests
 import re
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
+import webbrowser
+import time
+import threading
 
 class DiscordOAuthHandler:
     """Discord OAuth 登录处理器"""
@@ -227,9 +230,12 @@ class DiscordOAuthHandler:
             if has_session:
                 print(f"    [!] 尝试 Session 验证...")
                 user_info = self._verify_session()
+                print(f"    [*] Session 验证结果: {user_info}")
                 if user_info and not user_info.get('error'):
                     print(f"    [+] Session 验证成功！用户: {user_info.get('name', 'Unknown')}")
                     return {'token': 'SESSION_AUTH', 'user_info': user_info}
+                else:
+                    print(f"    [-] Session 验证失败或没有找到有效的session")
 
             return {'error': '未能从回调中获取 token'}
             
@@ -245,12 +251,109 @@ class DiscordOAuthHandler:
             if match: return match.group(1)
         return None
 
+    def oauth_login_with_browser(self) -> Dict[str, Any]:
+        """
+        通过浏览器进行 OAuth 登录
+        
+        Returns:
+            包含 zai.is JWT token 的字典
+        """
+        print("\n[*] 开始 OAuth 浏览器登录流程...")
+        
+        try:
+            # Step 1: 获取 OAuth 登录 URL
+            print("[1/3] 获取 Discord 授权 URL...")
+            oauth_info = self._get_discord_authorize_url()
+            if 'error' in oauth_info:
+                return oauth_info
+            
+            authorize_url = oauth_info['authorize_url']
+            print(f"    授权 URL: {authorize_url[:80]}...")
+            
+            # Step 2: 在浏览器中打开授权 URL
+            print("[2/3] 在浏览器中打开授权页面...")
+            print("    请在浏览器中完成 Discord 登录授权")
+            webbrowser.open(authorize_url)
+            
+            # Step 3: 等待用户完成授权并检查结果
+            print("[3/3] 等待授权完成...")
+            print("    请在浏览器中完成授权，系统将自动检测...")
+            
+            # 创建一个标志来停止检查
+            stop_checking = threading.Event()
+            result = {'error': '授权超时'}
+            
+            def check_auth_status():
+                nonlocal result
+                start_time = time.time()
+                check_interval = 2  # 每2秒检查一次
+                max_wait = 120  # 最多等待120秒
+                
+                while not stop_checking.is_set() and (time.time() - start_time) < max_wait:
+                    # 检查 session 状态
+                    user_info = self._verify_session()
+                    if user_info and not user_info.get('error'):
+                        print(f"\n[+] 授权成功！用户: {user_info.get('name', 'Unknown')}")
+                        result = {
+                            'token': 'SESSION_AUTH',
+                            'user_info': user_info,
+                            'source': 'oauth_browser'
+                        }
+                        stop_checking.set()
+                        break
+                    
+                    # 检查是否有 token cookie
+                    for cookie in self.session.cookies:
+                        if cookie.name == 'token':
+                            print(f"\n[+] 获取到 JWT Token!")
+                            result = {
+                                'token': cookie.value,
+                                'source': 'oauth_browser'
+                            }
+                            stop_checking.set()
+                            break
+                    
+                    time.sleep(check_interval)
+                
+                if not stop_checking.is_set():
+                    print("\n[-] 授权超时，请重试")
+            
+            # 在后台线程中检查授权状态
+            check_thread = threading.Thread(target=check_auth_status)
+            check_thread.start()
+            
+            # 等待检查完成
+            check_thread.join()
+            stop_checking.set()
+            
+            return result
+            
+        except Exception as e:
+            return {'error': f'OAuth 浏览器登录出错: {str(e)}'}
+
     def _verify_session(self) -> Optional[Dict]:
         try:
-            resp = self.session.get(f"{self.base_url}/api/v1/auths/", headers={'Accept': 'application/json'})
-            if resp.status_code == 200: return resp.json()
-        except: pass
-        return None
+            print(f"    [*] 调用 API: {self.base_url}/api/v1/auths/")
+            resp = self.session.get(
+                f"{self.base_url}/api/v1/auths/",
+                headers={'Accept': 'application/json'},
+                timeout=10  # 添加超时设置
+            )
+            print(f"    [*] API 响应状态码: {resp.status_code}")
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"    [*] API 响应数据: {data}")
+                return data
+            else:
+                print(f"    [-] API 响应内容: {resp.text[:500]}...")
+                return None
+        except requests.exceptions.Timeout as e:
+            print(f"    [!] API 请求超时: {str(e)}")
+            return None
+        except Exception as e:
+            print(f"    [!] Session 验证出错: {str(e)}")
+            return None
 
 def main():
     parser = argparse.ArgumentParser(description='zAI Token 获取工具')

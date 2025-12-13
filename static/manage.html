@@ -250,6 +250,11 @@
 
         // Tabs
         function switchTab(tab) {
+            // Clean up countdown timer when leaving tokens tab
+            if (tab !== 'tokens') {
+                stopCountdown();
+            }
+            
             ['tokens', 'settings', 'logs'].forEach(t => {
                 document.getElementById(`view-${t}`).classList.toggle('hidden', t !== tab);
                 const btn = document.getElementById(`tab-${t}`);
@@ -261,35 +266,45 @@
             if (tab === 'logs') loadLogs();
         }
 
+        // Global state for countdown
+        let tokensData = [];
+        let tokenRefreshInterval = 3600; // Default value
+        let countdownTimer = null;
+
         // Functions
         async function loadTokens() {
-            const data = await api.get('/api/tokens');
+            const response = await api.get('/api/tokens');
             const stats = await api.get('/api/stats');
+            
+            // Handle new response structure
+            if (response.tokens) {
+                tokensData = response.tokens;
+                tokenRefreshInterval = response.config?.token_refresh_interval || 3600;
+            } else {
+                // Fallback for old API response
+                tokensData = response;
+                tokenRefreshInterval = 3600;
+            }
             
             document.getElementById('stat-total-tokens').textContent = stats.total_tokens || 0;
             document.getElementById('stat-active-tokens').textContent = stats.active_tokens || 0;
 
+            renderTokens();
+            startCountdown();
+        }
+
+        function renderTokens() {
             const tbody = document.getElementById('tokens-table-body');
-            tbody.innerHTML = data.map(t => {
-                // Calculate remaining refresh time
-                let remaining = '-';
-                if (t.at_expires) {
-                    const diff = new Date(t.at_expires) - new Date();
-                    if (diff > 0) {
-                        const mins = Math.floor(diff / 60000);
-                        const hours = Math.floor(mins / 60);
-                        remaining = hours > 0 ? `${hours}小时` : `${mins}分钟`;
-                    } else {
-                        remaining = '已过期';
-                    }
-                }
+            tbody.innerHTML = tokensData.map(t => {
+                const remaining = calculateRemainingSeconds(t);
+                const remainingDisplay = formatRemainingTime(remaining);
 
                 return `
                 <tr>
                     <td class="px-4 py-2 font-mono text-xs max-w-[150px] truncate" title="${t.st}">${t.st ? t.st.substring(0, 20) + '...' : '-'}</td>
                     <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${t.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${t.is_active ? '活跃' : '禁用'}</span></td>
                     <td class="px-4 py-2 text-xs text-muted-foreground max-w-[150px] truncate" title="${t.zai_token || 'None'}">${t.zai_token ? '已获取' : '无'}</td>
-                    <td class="px-4 py-2 text-xs">${remaining}</td>
+                    <td class="px-4 py-2 text-xs" data-token-id="${t.id}">${remainingDisplay}</td>
                     <td class="px-4 py-2 text-xs">${t.user_paygate_tier === 'PAYGATE_TIER_NOT_PAID' ? '普通' : '会员'}</td>
                     <td class="px-4 py-2 text-xs">${t.error_count || 0}</td>
                     <td class="px-4 py-2 text-xs text-muted-foreground remark-cell" title="${(t.remark || '-').replace(/"/g, '&quot;')}">${t.remark || '-'}</td>
@@ -300,6 +315,52 @@
                     </td>
                 </tr>
             `}).join('');
+        }
+
+        function calculateRemainingSeconds(token) {
+            if (!token.at_expires) return null;
+            const diff = new Date(token.at_expires) - new Date();
+            return diff > 0 ? Math.floor(diff / 1000) : 0;
+        }
+
+        function formatRemainingTime(seconds) {
+            if (seconds === null) return '-';
+            if (seconds === 0) return '已过期';
+            
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            if (hours > 0) {
+                return `${hours}小时${mins}分${secs}秒`;
+            } else if (mins > 0) {
+                return `${mins}分${secs}秒`;
+            } else {
+                return `${secs}秒`;
+            }
+        }
+
+        function startCountdown() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+            }
+            
+            countdownTimer = setInterval(() => {
+                tokensData.forEach(token => {
+                    const cell = document.querySelector(`td[data-token-id="${token.id}"]`);
+                    if (cell) {
+                        const remaining = calculateRemainingSeconds(token);
+                        cell.textContent = formatRemainingTime(remaining);
+                    }
+                });
+            }, 1000);
+        }
+
+        function stopCountdown() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
         }
 
         async function refreshAllZaiTokens() {
@@ -440,6 +501,9 @@
         // Init
         if (!localStorage.getItem('adminToken')) window.location.href = '/login';
         loadTokens();
+
+        // Clean up countdown timer on page unload
+        window.addEventListener('beforeunload', stopCountdown);
     </script>
 </body>
 </html>
