@@ -10,15 +10,15 @@ Zai2API 是一个功能完整的 OpenAI 兼容 API 服务网关。它允许你�
 
 ## 功能特性
 
-*   **多 Token 管理**：支持批量添加、删除、禁用 Discord Token。
-*   **自动保活**：后台调度器自动检测并刷新过期的 Zai Token。
-*   **OpenAI 兼容**：提供 `/v1/chat/completions` 和 `/v1/models` 接口。
-*   **负载均衡**：API 请求会自动轮询使用当前活跃的 Token。
-*   **WebUI 面板**：
-    *   **Token 列表**：实时查看 Token 状态、剩余有效期。
-    *   **系统配置**：修改管理员密码、API Key、代理设置、错误重试策略等。
-    *   **请求日志**：详细记录 API 调用的耗时、状态码和使用的 Token。
-*   **Docker 部署**：提供 Dockerfile 和 docker-compose.yml，一键部署。
+- **多 Token 管理**：支持批量添加、删除、禁用 Discord Token。
+- **自动保活**：后台调度器自动检测并刷新过期的 Zai Token。
+- **OpenAI 兼容**：提供 `/v1/chat/completions` 和 `/v1/models` 接口。
+- **负载均衡**：API 请求会自动轮询使用当前活跃的 Token。
+- **WebUI 面板**：
+  - **Token 列表**：实时查看 Token 状态、剩余有效期。
+  - **系统配置**：修改管理员密码、API Key、代理设置、错误重试策略等。
+  - **请求日志**：详细记录 API 调用的耗时、状态码和使用的 Token。
+- **Docker 部署**：提供 Dockerfile 和 docker-compose.yml，一键部署。
 
 ## 快速开始
 
@@ -29,9 +29,9 @@ Zai2API 是一个功能完整的 OpenAI 兼容 API 服务网关。它允许你�
 
 ### 方式一：Docker Compose 部署（推荐）
 
-1.  克隆或下载本项目代码。
-2.  确保已安装 Docker 和 Docker Compose。
-3.  在项目根目录下运行：
+1. 克隆或下载本项目代码。
+2. 确保已安装 Docker 和 Docker Compose。
+3. 在项目根目录下运行：
 
 ```bash
 git clone  https://github.com/Futureppo/zai.is2api.git && cd zai.is2api
@@ -41,27 +41,24 @@ git clone  https://github.com/Futureppo/zai.is2api.git && cd zai.is2api
 docker-compose up -d
 ```
 
-4.  服务启动后，访问 `http://localhost:5000` 进入管理后台。
+1. 服务启动后，访问 `http://localhost:5000` 进入管理后台。
 
 ### 方式二：源码部署
 
-1.  确保已安装 Python 3.10+。
-2.  安装依赖：
+1. 确保已安装 Python 3.10+。
+2. 安装依赖：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3.  启动服务：
+1. 启动服务：
 
 ```bash
 python app.py
 ```
 
-
 ## 配置说明
-
-
 
 ### 环境变量
 
@@ -90,18 +87,17 @@ curl http://localhost:5000/v1/chat/completions \
   }'
 ```
 
-
 ## 管理面板功能
 
-1.  **Token 管理**：
-    *   点击“新增 Token”输入 Discord Token (Session Token)。
-    *   系统会自动尝试获取 Zai Token。
-    *   点击“一键刷新 ZaiToken”可强制刷新所有 Token。
-2.  **系统配置**：
-    *   调整“错误封禁阈值”和“错误重试次数”以优化稳定性。
-    *   调整 Token 刷新间隔。
-3.  **请求日志**：
-    *   查看最近的 API 请求记录。
+1. **Token 管理**：
+    - 点击“新增 Token”输入 Discord Token (Session Token)。
+    - 系统会自动尝试获取 Zai Token。
+    - 点击“一键刷新 ZaiToken”可强制刷新所有 Token。
+2. **系统配置**：
+    - 调整“错误封禁阈值”和“错误重试次数”以优化稳定性。
+    - 调整 Token 刷新间隔。
+3. **请求日志**：
+    - 查看最近的 API 请求记录。
 
 ## Star History
 
