@@ -71,7 +71,7 @@ ZaiBridge 是一个功能完整的 OpenAI 兼容 API 服务网关。它允许你
 3. 在项目根目录下运行：
 
 ```bash
-git clone  https://github.com/Futureppo/zai.is2api.git && cd zai.is2api
+git clone https://github.com/EraAsh/zai2api.git && cd zai2api
 ```
 
 ```bash
