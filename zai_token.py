@@ -209,13 +209,15 @@ class DiscordOAuthHandler:
             return {'error': f'授权过程出错: {str(e)}'}
     
     def _handle_oauth_callback(self, callback_url: str) -> Dict[str, Any]:
-        """处理 OAuth 回调，获取 JWT token"""
+        """处理 OAuth 回调，获取 JWT token 和 darkknight"""
         try:
             print(f"    回调 URL: {callback_url[:80]}...")
             
             response = self.session.get(callback_url, allow_redirects=False, timeout=30)
             
             max_redirects = 10
+            darkknight_value = None
+            
             for i in range(max_redirects):
                 print(f"    重定向 {i+1}: 状态码 {response.status_code}")
                 
@@ -227,7 +229,14 @@ class DiscordOAuthHandler:
                 
                 # Check for token in URL
                 token = self._extract_token(location)
-                if token: return {'token': token}
+                if token:
+                    # 尝试提取 darkknight
+                    darkknight_value = self._extract_darkknight_from_response(response)
+                    result = {'token': token}
+                    if darkknight_value:
+                        result['darkknight'] = darkknight_value
+                        print(f"    [+] 成功提取 darkknight 值")
+                    return result
                 
                 if location.startswith('/'):
                     location = f"{self.base_url}{location}"
@@ -240,7 +249,14 @@ class DiscordOAuthHandler:
             print(f"    最终状态码: {response.status_code}")
             
             token = self._extract_token(final_url)
-            if token: return {'token': token}
+            if token:
+                # 尝试提取 darkknight
+                darkknight_value = self._extract_darkknight_from_response(response)
+                result = {'token': token}
+                if darkknight_value:
+                    result['darkknight'] = darkknight_value
+                    print(f"    [+] 成功提取 darkknight 值")
+                return result
             
             # Check Cookies
             print(f"    检查 Cookies...")
@@ -248,7 +264,13 @@ class DiscordOAuthHandler:
             for cookie in self.session.cookies:
                 print(f"      {cookie.name}: {str(cookie.value)[:50]}...")
                 if cookie.name == 'token':
-                    return {'token': cookie.value}
+                    # 尝试提取 darkknight
+                    darkknight_value = self._extract_darkknight_from_response(response)
+                    result = {'token': cookie.value}
+                    if darkknight_value:
+                        result['darkknight'] = darkknight_value
+                        print(f"    [+] 成功提取 darkknight 值")
+                    return result
                 if any(x in cookie.name.lower() for x in ['session', 'auth', 'id', 'user']):
                     has_session = True
             
@@ -259,7 +281,13 @@ class DiscordOAuthHandler:
                 print(f"    [*] Session 验证结果: {user_info}")
                 if user_info and not user_info.get('error'):
                     print(f"    [+] Session 验证成功！用户: {user_info.get('name', 'Unknown')}")
-                    return {'token': 'SESSION_AUTH', 'user_info': user_info}
+                    # 尝试从 session 响应中提取 darkknight
+                    darkknight_value = self._extract_darkknight_from_session()
+                    result = {'token': 'SESSION_AUTH', 'user_info': user_info}
+                    if darkknight_value:
+                        result['darkknight'] = darkknight_value
+                        print(f"    [+] 成功提取 darkknight 值")
+                    return result
                 else:
                     print(f"    [-] Session 验证失败或没有找到有效的session")
 
@@ -276,6 +304,93 @@ class DiscordOAuthHandler:
             match = re.search(r'[?&]token=([^&\s]+)', input_str)
             if match: return match.group(1)
         return None
+    
+    def _extract_darkknight_from_response(self, response) -> Optional[str]:
+        """从响应中提取 x-zai-darkknight 值"""
+        try:
+            # 方法1: 从响应头中提取
+            darkknight = response.headers.get('x-zai-darkknight')
+            if darkknight:
+                print(f"    [从响应头提取] darkknight: {darkknight[:20]}...")
+                return darkknight
+            
+            # 方法2: 从响应体中提取（HTML 或 JSON）
+            try:
+                content_type = response.headers.get('Content-Type', '')
+                if 'application/json' in content_type:
+                    data = response.json()
+                    # 检查常见的 darkknight 字段名
+                    for key in ['darkknight', 'x-zai-darkknight', 'darkKnight', 'x_darkknight']:
+                        if key in data:
+                            print(f"    [从JSON提取] darkknight: {data[key][:20]}...")
+                            return data[key]
+                elif 'text/html' in content_type:
+                    # 从 HTML 中提取
+                    text = response.text
+                    # 尝试从 script 标签中提取
+                    script_pattern = r'<script[^>]*>(.*?)</script>'
+                    scripts = re.findall(script_pattern, text, re.DOTALL)
+                    for script in scripts:
+                        # 查找 darkknight 相关的变量
+                        darkknight_patterns = [
+                            r'["\']x-zai-darkknight["\']\s*:\s*["\']([^"\']+)["\']',
+                            r'["\']darkknight["\']\s*:\s*["\']([^"\']+)["\']',
+                            r'x-zai-darkknight\s*=\s*["\']([^"\']+)["\']',
+                            r'darkknight\s*=\s*["\']([^"\']+)["\']'
+                        ]
+                        for pattern in darkknight_patterns:
+                            match = re.search(pattern, script)
+                            if match:
+                                print(f"    [从HTML提取] darkknight: {match.group(1)[:20]}...")
+                                return match.group(1)
+            except:
+                pass
+            
+            # 方法3: 从 Set-Cookie 中提取
+            set_cookie = response.headers.get('Set-Cookie', '')
+            if 'darkknight' in set_cookie.lower():
+                cookie_pattern = r'darkknight=([^;]+)'
+                match = re.search(cookie_pattern, set_cookie, re.IGNORECASE)
+                if match:
+                    print(f"    [从Cookie提取] darkknight: {match.group(1)[:20]}...")
+                    return match.group(1)
+            
+            return None
+        except Exception as e:
+            print(f"    [!] 提取 darkknight 失败: {str(e)}")
+            return None
+    
+    def _extract_darkknight_from_session(self) -> Optional[str]:
+        """从 session 中提取 darkknight 值"""
+        try:
+            # 尝试调用一个需要认证的 API 来获取 darkknight
+            resp = self.session.get(
+                f"{self.base_url}/api/v1/user/profile",
+                headers={'Accept': 'application/json'},
+                timeout=10
+            )
+            
+            if resp.status_code == 200:
+                # 从响应头中提取
+                darkknight = resp.headers.get('x-zai-darkknight')
+                if darkknight:
+                    print(f"    [从API响应头提取] darkknight: {darkknight[:20]}...")
+                    return darkknight
+                
+                # 从响应体中提取
+                try:
+                    data = resp.json()
+                    for key in ['darkknight', 'x-zai-darkknight', 'darkKnight']:
+                        if key in data:
+                            print(f"    [从API响应体提取] darkknight: {data[key][:20]}...")
+                            return data[key]
+                except:
+                    pass
+            
+            return None
+        except Exception as e:
+            print(f"    [!] 从 session 提取 darkknight 失败: {str(e)}")
+            return None
 
     def oauth_login_with_browser(self) -> Dict[str, Any]:
         """
@@ -320,11 +435,16 @@ class DiscordOAuthHandler:
                     user_info = self._verify_session()
                     if user_info and not user_info.get('error'):
                         print(f"\n[+] 授权成功！用户: {user_info.get('name', 'Unknown')}")
+                        # 尝试提取 darkknight
+                        darkknight_value = self._extract_darkknight_from_session()
                         result = {
                             'token': 'SESSION_AUTH',
                             'user_info': user_info,
                             'source': 'oauth_browser'
                         }
+                        if darkknight_value:
+                            result['darkknight'] = darkknight_value
+                            print(f"    [+] 成功提取 darkknight 值")
                         stop_checking.set()
                         break
                     
@@ -332,10 +452,15 @@ class DiscordOAuthHandler:
                     for cookie in self.session.cookies:
                         if cookie.name == 'token':
                             print(f"\n[+] 获取到 JWT Token!")
+                            # 尝试提取 darkknight
+                            darkknight_value = self._extract_darkknight_from_session()
                             result = {
                                 'token': cookie.value,
                                 'source': 'oauth_browser'
                             }
+                            if darkknight_value:
+                                result['darkknight'] = darkknight_value
+                                print(f"    [+] 成功提取 darkknight 值")
                             stop_checking.set()
                             break
                     
@@ -402,6 +527,8 @@ def main():
             print(f"\n[+] 登录成功!\n")
             
             token = result.get('token')
+            darkknight = result.get('darkknight')
+            
             if token == 'SESSION_AUTH':
                 # Try to extract a real token from user_info if present, else just show a message
                 user_info = result.get('user_info', {})
@@ -409,7 +536,12 @@ def main():
                 print(f"User: {user_info.get('name')} ({user_info.get('email')})")
                 print(f"ID: {user_info.get('id')}")
             else:
-                print(f"\n{token}\n")
+                print(f"\nToken: {token}\n")
+            
+            if darkknight:
+                print(f"DarkKnight: {darkknight}\n")
+            else:
+                print(f"DarkKnight: 未提取到（可能需要手动输入）\n")
 
 if __name__ == '__main__':
     main()
