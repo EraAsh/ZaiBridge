@@ -105,13 +105,18 @@ class DiscordOAuthHandler:
     def _get_discord_authorize_url(self) -> Dict[str, Any]:
         """获取 Discord 授权 URL 和参数"""
         try:
+            print(f"    请求 URL: {self.get_oauth_login_url()}")
             response = self.session.get(
                 self.get_oauth_login_url(),
                 allow_redirects=False
             )
             
+            print(f"    响应状态码: {response.status_code}")
+            print(f"    响应头: {dict(response.headers)}")
+            
             if response.status_code in [301, 302, 303, 307, 308]:
                 location = response.headers.get('Location', '')
+                print(f"    重定向位置: {location[:200]}...")
                 if 'discord.com' in location:
                     parsed = urlparse(location)
                     params = parse_qs(parsed.query)
@@ -124,6 +129,9 @@ class DiscordOAuthHandler:
                     }
             return {'error': f'无法获取授权 URL，状态码: {response.status_code}'}
         except Exception as e:
+            print(f"    [!] 获取授权 URL 异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'error': f'获取授权 URL 失败: {str(e)}'}
     
     def _authorize_discord_app(self, discord_token, client_id, redirect_uri, scope, state) -> Dict[str, Any]:
@@ -131,7 +139,9 @@ class DiscordOAuthHandler:
         try:
             authorize_url = f"{self.DISCORD_API_BASE}/oauth2/authorize"
             
-            # 构建 super properties 
+            print(f"    授权 URL: {authorize_url}")
+            
+            # 构建 super properties
             super_properties = base64.b64encode(json.dumps({
                 "os": "Windows",
                 "browser": "Chrome",
@@ -160,27 +170,41 @@ class DiscordOAuthHandler:
                 'integration_type': 0
             }
             
+            print(f"    请求参数: {params}")
+            print(f"    请求体: {payload}")
+            
             response = self.session.post(
                 authorize_url,
                 headers=headers,
                 params=params,
-                json=payload
+                json=payload,
+                timeout=30
             )
+            
+            print(f"    授权响应状态码: {response.status_code}")
+            print(f"    授权响应头: {dict(response.headers)}")
             
             if response.status_code == 200:
                 try:
                     data = response.json()
+                    print(f"    授权响应数据: {data}")
                     location = data.get('location', '')
                     if location:
                         if location.startswith('/'):
                             location = f"{self.base_url}{location}"
                         return {'callback_url': location}
-                except:
+                except Exception as json_decode_error:
+                    print(f"    [!] 解析 JSON 响应失败: {json_decode_error}")
                     pass
+            else:
+                print(f"    [!] 授权失败，响应内容: {response.text[:500]}...")
             
             return {'error': f'授权失败 (状态码: {response.status_code})'}
             
         except Exception as e:
+            print(f"    [!] 授权过程异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'error': f'授权过程出错: {str(e)}'}
     
     def _handle_oauth_callback(self, callback_url: str) -> Dict[str, Any]:
@@ -188,13 +212,14 @@ class DiscordOAuthHandler:
         try:
             print(f"    回调 URL: {callback_url[:80]}...")
             
-            response = self.session.get(callback_url, allow_redirects=False)
+            response = self.session.get(callback_url, allow_redirects=False, timeout=30)
             
             max_redirects = 10
             for i in range(max_redirects):
-                print(f"    重定向 {i+1}: 状态码 {response.status_code}")
+                print(f"    重定向 {i+1}: 状态码 {response.status码}")
                 
                 if response.status_code not in [301, 302, 303, 307, 308]:
+                    print(f"    [!] 非重定向响应，状态码: {response.status_code}")
                     break
                 
                 location = response.headers.get('Location', '')
@@ -203,6 +228,7 @@ class DiscordOAuthHandler:
                 # Check for token in URL
                 token = self._extract_token(location)
                 if token:
+                    print(f"    [+] 从 URL 中提取到 Token")
                     # 尝试获取 x-zai-darkknight
                     darkknight = self._extract_darkknight_from_response(response)
                     return {'token': token, 'darkknight': darkknight}
@@ -210,7 +236,7 @@ class DiscordOAuthHandler:
                 if location.startswith('/'):
                     location = f"{self.base_url}{location}"
                 
-                response = self.session.get(location, allow_redirects=False)
+                response = self.session.get(location, allow_redirects=False, timeout=30)
             
             # Final check in URL
             final_url = response.url if hasattr(response, 'url') else ''
@@ -219,6 +245,7 @@ class DiscordOAuthHandler:
             
             token = self._extract_token(final_url)
             if token:
+                print(f"    [+] 从最终 URL 中提取到 Token")
                 darkknight = self._extract_darkknight_from_response(response)
                 return {'token': token, 'darkknight': darkknight}
             
@@ -228,6 +255,7 @@ class DiscordOAuthHandler:
             for cookie in self.session.cookies:
                 print(f"      {cookie.name}: {str(cookie.value)[:50]}...")
                 if cookie.name == ObfuscatedStrings.get_token_cookie():
+                    print(f"    [+] 找到 token cookie")
                     darkknight = self._extract_darkknight_from_response(response)
                     return {'token': cookie.value, 'darkknight': darkknight}
                 if any(x in cookie.name.lower() for x in ['session', 'auth', 'id', 'user']):
@@ -245,7 +273,8 @@ class DiscordOAuthHandler:
                     return {'token': 'SESSION_AUTH', 'user_info': user_info, 'darkknight': darkknight}
                 else:
                     print(f"    [-] Session 验证失败或没有找到有效的session")
-
+ 
+            print(f"    [!] 未能从回调中获取 token")
             return {'error': '未能从回调中获取 token'}
             
         except Exception as e:
