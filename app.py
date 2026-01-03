@@ -953,6 +953,8 @@ def proxy_models():
         return last_response
     return jsonify({"error": "Failed to fetch models"}), 500
 
+# Initialize database on startup (works with both Gunicorn and direct Python execution)
+init_db()
+
 if __name__ == '__main__':
-    init_db()
     app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False) # use_reloader=False for scheduler
