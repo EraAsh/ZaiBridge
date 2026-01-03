@@ -1,23 +1,39 @@
 FROM python:3.10-slim
 
+# 设置工作目录
 WORKDIR /app
 
-# Install system dependencies (if any needed for pysqlite3 or others)
-# RUN apt-get update && apt-get install -y --no-install-recommends gcc libffi-dev && rm -rf /var/lib/apt/lists/*
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
 
+# 复制依赖文件
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
+# 安装 Python 依赖
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
 COPY . .
 
-# Environment variables
-ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=app.py
+# 创建必要的目录
+RUN mkdir -p instance logs
 
-# Create instance directory for volume mount
-RUN mkdir -p instance
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    FLASK_APP=app.py \
+    FLASK_ENV=production
 
+# 暴露端口
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
 
+# 运行应用
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "--worker-class", "sync:gunicorn.app:app"]
