@@ -200,12 +200,19 @@ def generate_darkknight_sync(headless: bool = True, max_retries: int = 3) -> Opt
         DarkKnight token 字符串
     """
     try:
-        loop = asyncio.get_event_loop()
+        # 尝试获取当前事件循环
+        loop = asyncio.get_running_loop()
+        # 如果已经在事件循环中运行，创建新任务
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                asyncio.run,
+                generate_darkknight_token(headless, max_retries)
+            )
+            return future.result()
     except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-    return loop.run_until_complete(generate_darkknight_token(headless, max_retries))
+        # 没有运行中的事件循环，创建新的
+        return asyncio.run(generate_darkknight_token(headless, max_retries))
 
 
 if __name__ == '__main__':
