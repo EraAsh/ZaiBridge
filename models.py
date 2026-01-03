@@ -31,6 +31,8 @@ class Token(db.Model):
     email = db.Column(db.String(120), nullable=True) # Got from Zai
     discord_token = db.Column(db.String(512), nullable=False) # ST
     zai_token = db.Column(db.Text, nullable=True) # AT (JWT)
+    zai_darkknight = db.Column(db.String(512), nullable=True) # x-zai-darkknight header value (手动输入或自动获取)
+    darkknight_source = db.Column(db.String(50), default='auto') # 'auto' 或 'manual'
     at_expires = db.Column(db.DateTime, nullable=True)
     
     is_active = db.Column(db.Boolean, default=True)

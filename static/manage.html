@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>管理控制台 - Zai2API</title>
+    <title>管理控制台 - ZaiBridge</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @keyframes slide-up{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
@@ -21,10 +22,10 @@
     <!-- Navbar -->
     <header class="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur">
         <div class="container mx-auto flex h-14 items-center px-4">
-            <span class="font-bold text-xl mr-8">Zai2API</span>
+            <span class="font-bold text-xl mr-8">ZaiBridge</span>
             <div class="flex-1"></div>
             <div class="flex items-center gap-4">
-                <a href="https://github.com/Futureppo/zai.is2api" target="_blank" class="text-sm hover:underline">GitHub</a>
+                <a href="https://github.com/EraAsh/zai-bridge" target="_blank" class="text-sm hover:underline">GitHub</a>
                 <button onclick="logout()" class="text-sm hover:underline text-destructive">登出</button>
             </div>
         </div>
@@ -64,7 +65,7 @@
                 <button onclick="loadTokens()" class="inline-flex items-center justify-center rounded-md border border-input bg-background h-9 px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground">
                     刷新
                         </button>
-                </div>
+                 </div>
                 
             <!-- Table -->
             <div class="rounded-md border border-border overflow-hidden">
@@ -75,6 +76,7 @@
                                 <th class="h-10 px-4 align-middle">discordtoken</th>
                                 <th class="h-10 px-4 align-middle">状态</th>
                                 <th class="h-10 px-4 align-middle">zaitoken</th>
+                                <th class="h-10 px-4 align-middle">darkknight</th>
                                 <th class="h-10 px-4 align-middle">剩余刷新时间</th>
                                 <th class="h-10 px-4 align-middle">错误</th>
                                 <th class="h-10 px-4 align-middle">刷新状态 <small class="text-muted-foreground">(悬停查看完整内容)</small></th>
@@ -194,15 +196,21 @@
     <!-- Add Token Modal -->
     <div id="modal-add-token" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
         <div class="bg-background rounded-lg shadow-lg w-full max-w-lg p-6 space-y-4">
-                <h3 class="text-lg font-semibold">添加 Token</h3>
+                <h3 class="text-lg font-semibold">添加 Discord Token</h3>
                 <div class="space-y-2">
-                <label class="text-sm font-medium">Discord Token</label>
-                <textarea id="input-add-st" class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="输入 Discord Token"></textarea>
+                <label class="text-sm font-medium">Discord Token <span class="text-red-500">*</span></label>
+                <textarea id="input-add-st" class="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm" placeholder="请输入您的 Discord Token&#10;获取方式：在 Discord 中按 F12 打开开发者工具，切换到 Network 标签，发送消息后找到请求，复制 Authorization 字段的值"></textarea>
+                <p class="text-xs text-muted-foreground">系统将自动使用此 Token 登录 zai.is 并获取 API Token</p>
             </div>
                 <div class="space-y-2">
-                <label class="text-sm font-medium"> (可选)</label>
-                <input id="input-add-remark" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm">
+                <label class="text-sm font-medium">x-zai-darkknight (可选)</label>
+                <input id="input-add-darkknight" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm" placeholder="如果自动获取失败，可以手动输入 darkknight 值">
+                <p class="text-xs text-muted-foreground">获取方式：在 zai.is 登录后按 F12 打开开发者工具，切换到 Network 标签，找到任意 API 请求，在请求头中找到 x-zai-darkknight 字段的值</p>
             </div>
+                <div class="space-y-2">
+                <label class="text-sm font-medium">备注 (可选)</label>
+                    <input id="input-add-remark" class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm" placeholder="例如：主账号、备用账号等">
+                </div>
             <div class="flex justify-end gap-2 pt-2">
                 <button onclick="document.getElementById('modal-add-token').classList.add('hidden')" class="px-4 py-2 text-sm font-medium rounded-md hover:bg-accent">取消</button>
                 <button onclick="submitAddToken()" class="px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90">添加</button>
@@ -287,7 +295,7 @@
             
             document.getElementById('stat-total-tokens').textContent = stats.total_tokens || 0;
             document.getElementById('stat-active-tokens').textContent = stats.active_tokens || 0;
-
+ 
             renderTokens();
             startCountdown();
         }
@@ -297,15 +305,22 @@
             tbody.innerHTML = tokensData.map(t => {
                 const remaining = calculateRemainingSeconds(t);
                 const remainingDisplay = formatRemainingTime(remaining);
+                
+                // Darkknight 显示逻辑
+                let darkknightDisplay = '无';
+                if (t.zai_darkknight) {
+                    darkknightDisplay = t.darkknight_source === 'manual' ? '手动' : '自动';
+                }
 
                 return `
                 <tr>
-                    <td class="px-4 py-2 font-mono text-xs max-w-[150px] truncate" title="${t.st}">${t.st ? t.st.substring(0, 20) + '...' : '-'}</td>
+                    <td class="px-4 py-2 font-mono text-xs max-w-[150px truncate" title="${t.st}">${t.st ? t.st.substring(0, 20) + '...' : '-'}</td>
                     <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${t.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${t.is_active ? '活跃' : '禁用'}</span></td>
-                    <td class="px-4 py-2 text-xs text-muted-foreground max-w-[150px] truncate" title="${t.zai_token || 'None'}">${t.zai_token ? '已获取' : '无'}</td>
+                    <td class="px-4 py-2 text-xs text-muted-foreground max-w-[150px truncate" title="${t.zai_token || 'None'}">${t.zai_token ? '已获取' : '无'}</td>
+                    <td class="px-4 py-2 text-xs max-w-[150px truncate" title="${t.zai_darkknight || 'None'}">${darkknightDisplay}</td>
                     <td class="px-4 py-2 text-xs" data-token-id="${t.id}">${remainingDisplay}</td>
                     <td class="px-4 py-2 text-xs">${t.error_count || 0}</td>
-                    <td class="px-4 py-2 text-xs text-muted-foreground remark-cell" title="${(t.remark || '-').replace(/"/g, '&quot;')}">${t.remark || '-'}</td>
+                    <td class="px-4 py-2 text-xs text-muted-foreground remark-cell" title="${(t.remark || '-').replace(/"/g, '"')}">${t.remark || '-'}</td>
                     <td class="px-4 py-2 text-right space-x-1">
                         <button onclick="refreshTokenAT(${t.id})" class="text-xs text-blue-600 hover:underline">更新</button>
                         <button onclick="toggleToken(${t.id}, ${t.is_active})" class="text-xs text-blue-600 hover:underline">${t.is_active ? '禁用' : '启用'}</button>
@@ -383,16 +398,36 @@
 
         async function submitAddToken() {
             const st = document.getElementById('input-add-st').value.trim();
+            const darkknight = document.getElementById('input-add-darkknight').value.trim();
             const remark = document.getElementById('input-add-remark').value.trim();
             if (!st) return alert('请输入 Discord Token');
             
-            const res = await api.post('/api/tokens', { st, remark });
-            if (res.success) {
-                document.getElementById('modal-add-token').classList.add('hidden');
-                document.getElementById('input-add-st').value = '';
-                loadTokens();
-            } else {
-                alert(res.message || '添加失败');
+            // 显示加载状态
+            const btn = document.querySelector('#modal-add-token button:last-child');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '正在获取 Token...';
+            
+            try {
+                const res = await api.post('/api/tokens', { st, darkknight, remark });
+                if (res.success) {
+                    document.getElementById('modal-add-token').classList.add('hidden');
+                    document.getElementById('input-add-st').value = '';
+                    document.getElementById('input-add-darkknight').value = '';
+                    document.getElementById('input-add-remark').value = '';
+                    loadTokens();
+                    const msg = darkknight ?
+                        'Token 添加成功！已使用手动提供的 darkknight 值' :
+                        'Token 添加成功！系统已自动获取 zai.is 的 API Token';
+                    alert(msg);
+                } else {
+                    alert(res.message || '添加失败');
+                }
+            } catch (error) {
+                alert('添加失败：' + (error.message || '未知错误'));
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
             }
         }
 
@@ -410,98 +445,4 @@
             if (!confirm('确定删除?')) return;
             await api.delete(`/api/tokens/${id}`);
             loadTokens();
-        }
-
-        // Settings
-        async function loadSettings() {
-            const cfg = await api.get('/api/admin/config');
-            document.getElementById('cfg-admin-username').value = cfg.admin_username || '';
-            document.getElementById('cfg-current-apikey').value = cfg.api_key || '';
-            document.getElementById('cfg-error-ban').value = cfg.error_ban_threshold || 3;
-            document.getElementById('cfg-error-retry').value = cfg.error_retry_count || 3;
-            document.getElementById('cfg-debug-enabled').checked = cfg.debug_enabled || false;
-            document.getElementById('cfg-refresh-interval').value = cfg.token_refresh_interval || 3600;
-            const streamEl = document.getElementById('cfg-stream-conversion-enabled');
-            if (streamEl) streamEl.checked = cfg.stream_conversion_enabled || false;
-        }
-
-        async function updatePassword() {
-            const username = document.getElementById('cfg-admin-username').value;
-            const old_password = document.getElementById('cfg-old-password').value;
-            const new_password = document.getElementById('cfg-new-password').value;
-            if (!old_password || !new_password) return alert('请输入密码');
-            
-            const res = await api.post('/api/admin/password', { username, old_password, new_password });
-            if (res.success) {
-                alert('密码已修改，请重新登录');
-                logout();
-            } else {
-                alert(res.detail || '修改失败');
-            }
-        }
-
-        async function updateApiKey() {
-            const new_api_key = document.getElementById('cfg-new-apikey').value;
-            if (!new_api_key) return alert('请输入新 API Key');
-            const res = await api.post('/api/admin/apikey', { new_api_key });
-            if (res.success) {
-                alert('API Key 已更新');
-                document.getElementById('cfg-new-apikey').value = '';
-                loadSettings();
-            } else {
-                alert(res.detail || res.message || '更新失败');
-            }
-        }
-
-        async function saveErrorConfig() {
-            const error_ban_threshold = parseInt(document.getElementById('cfg-error-ban').value);
-            const error_retry_count = parseInt(document.getElementById('cfg-error-retry').value);
-            const res = await api.post('/api/admin/config', { error_ban_threshold, error_retry_count });
-            if (res && res.success) alert('保存成功');
-            else alert(res.detail || res.message || '保存失败');
-        }
-
-        async function saveDebugConfig() {
-            const enabled = document.getElementById('cfg-debug-enabled').checked;
-            const token_refresh_interval = parseInt(document.getElementById('cfg-refresh-interval').value);
-            const res = await api.post('/api/admin/debug', { enabled, token_refresh_interval });
-            if (res && res.success) alert('保存成功');
-            else alert(res.detail || res.message || '保存失败');
-        }
-
-        async function saveStreamConversion() {
-            const enabled = document.getElementById('cfg-stream-conversion-enabled').checked;
-            const res = await api.post('/api/admin/config', { stream_conversion_enabled: enabled });
-            if (res && res.success) alert('保存成功');
-            else alert(res.detail || res.message || '保存失败');
-        }
-
-        // Logs
-        async function loadLogs() {
-            const logs = await api.get('/api/logs?limit=50');
-            const tbody = document.getElementById('logs-table-body');
-            tbody.innerHTML = logs.map(l => `
-                <tr>
-                    <td class="px-4 py-2 font-mono text-xs max-w-[180px] truncate" title="${l.discord_token || '-'}">${l.discord_token || '-'}</td>
-                    <td class="px-4 py-2 font-mono text-xs max-w-[180px] truncate text-muted-foreground" title="${l.zai_token || '-'}">${l.zai_token || '-'}</td>
-                    <td class="px-4 py-2"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs ${l.status_code == 200 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${l.status_code}</span></td>
-                    <td class="px-4 py-2 text-xs">${(l.duration ?? 0).toFixed(2)}</td>
-                    <td class="px-4 py-2 text-xs text-muted-foreground">${new Date(l.created_at).toLocaleString()}</td>
-                </tr>
-            `).join('');
-        }
-
-        function logout() {
-            localStorage.removeItem('adminToken');
-            window.location.href = '/login';
-        }
-
-        // Init
-        if (!localStorage.getItem('adminToken')) window.location.href = '/login';
-        loadTokens();
-
-        // Clean up countdown timer on page unload
-        window.addEventListener('beforeunload', stopCountdown);
-    </script>
-</body>
-</html>
+       

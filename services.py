@@ -20,7 +20,7 @@ def get_zai_handler():
         }
     return handler
 
-def update_token_info(token_id, use_oauth=False):
+def update_token_info(token_id, use_oauth=False, skip_darkknight=False):
     # Caller must ensure app context
     token = db.session.get(Token, token_id)
     if not token:
@@ -45,6 +45,7 @@ def update_token_info(token_id, use_oauth=False):
         return False, result['error']
 
     at = result.get('token')
+    darkknight = result.get('darkknight')
     user_info = result.get('user_info', {})
     
     if at == 'SESSION_AUTH':
@@ -52,6 +53,9 @@ def update_token_info(token_id, use_oauth=False):
          token.is_active = True
          token.error_count = 0
          token.zai_token = "SESSION_AUTH_COOKIE"
+         # 如果不是跳过 darkknight，则更新
+         if not skip_darkknight:
+             token.zai_darkknight = darkknight
          token.remark = f"Updated via {source} (Session Auth)"
          # For SESSION_AUTH, set expiry based on system config
          config = SystemConfig.query.first()
@@ -61,6 +65,10 @@ def update_token_info(token_id, use_oauth=False):
          return True, f"Session Auth Active ({source})"
     
     token.zai_token = at
+    # 如果不是跳过 darkknight，则更新
+    if not skip_darkknight:
+        token.zai_darkknight = darkknight
+        token.darkknight_source = 'auto'
     token.error_count = 0
     token.remark = f"Updated via {source}"
     
@@ -142,6 +150,7 @@ def create_or_update_token_from_oauth():
     
     # 更新 token 信息
     token.zai_token = zai_token if zai_token != 'SESSION_AUTH' else "SESSION_AUTH_COOKIE"
+    token.zai_darkknight = result.get('darkknight')
     token.is_active = True
     token.error_count = 0
     token.remark = f"Updated via OAuth login ({source})"

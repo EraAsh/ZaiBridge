@@ -15,18 +15,21 @@ import re
 import time
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse, parse_qs
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from obfuscator import ObfuscatedStrings, TokenProtector
 
 class DiscordOAuthHandler:
     """Discord OAuth 登录处理"""
     
-    # Discord API 端点
-    DISCORD_API_BASE = "https://discord.com/api/v9"
+    # Discord API 端点（使用混淆字符串）
+    DISCORD_API_BASE = ObfuscatedStrings.get_discord_api()
     
     def __init__(self, base_url: str = "https://zai.is"):
         self.base_url = base_url
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            ObfuscatedStrings.get_user_agent(): 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Referer': f'{base_url}/auth',
@@ -57,7 +60,7 @@ class DiscordOAuthHandler:
              return {'error': '无效的 Discord Token'}
 
         print("\n[*] 开始后端 OAuth 登录流程...")
-        print(f"[*] Discord Token: {discord_token[:20]}...{discord_token[-10:]}")
+        print(f"[*] Discord Token: {TokenProtector.mask_token(discord_token, show_chars=20)}")
         
         try:
             # Step 1: 访问 OAuth 登录入口，获取 Discord 授权 URL
@@ -138,8 +141,8 @@ class DiscordOAuthHandler:
             }).encode()).decode()
             
             headers = {
-                'Authorization': discord_token,
-                'Content-Type': 'application/json',
+                ObfuscatedStrings.get_auth_header(): discord_token,
+                ObfuscatedStrings.get_content_type(): 'application/json',
                 'X-Super-Properties': super_properties,
             }
             
@@ -182,7 +185,7 @@ class DiscordOAuthHandler:
             return {'error': f'授权过程出错: {str(e)}'}
     
     def _handle_oauth_callback(self, callback_url: str) -> Dict[str, Any]:
-        """处理 OAuth 回调，获取 JWT token"""
+        """处理 OAuth 回调，获取 JWT token 和 x-zai-darkknight"""
         try:
             print(f"    回调 URL: {callback_url[:80]}...")
             
@@ -200,7 +203,9 @@ class DiscordOAuthHandler:
                 
                 # Check for token in URL
                 token = self._extract_token(location)
-                if token: return {'token': token}
+                if token:
+                    darkknight = self._extract_darkknight_from_response(response)
+                    return {'token': token, 'darkknight': darkknight}
                 
                 if location.startswith('/'):
                     location = f"{self.base_url}{location}"
@@ -213,15 +218,18 @@ class DiscordOAuthHandler:
             print(f"    最终状态码: {response.status_code}")
             
             token = self._extract_token(final_url)
-            if token: return {'token': token}
+            if token:
+                darkknight = self._extract_darkknight_from_response(response)
+                return {'token': token, 'darkknight': darkknight}
             
             # Check Cookies
             print(f"    检查 Cookies...")
             has_session = False
             for cookie in self.session.cookies:
                 print(f"      {cookie.name}: {str(cookie.value)[:50]}...")
-                if cookie.name == 'token':
-                    return {'token': cookie.value}
+                if cookie.name == ObfuscatedStrings.get_token_cookie():
+                    darkknight = self._extract_darkknight_from_response(response)
+                    return {'token': cookie.value, 'darkknight': darkknight}
                 if any(x in cookie.name.lower() for x in ['session', 'auth', 'id', 'user']):
                     has_session = True
             
@@ -231,7 +239,8 @@ class DiscordOAuthHandler:
                 user_info = self._verify_session()
                 if user_info and not user_info.get('error'):
                     print(f"    [+] Session 验证成功！用户: {user_info.get('name', 'Unknown')}")
-                    return {'token': 'SESSION_AUTH', 'user_info': user_info}
+                    darkknight = self._extract_darkknight_from_response(response)
+                    return {'token': 'SESSION_AUTH', 'user_info': user_info, 'darkknight': darkknight}
 
             return {'error': '未能从回调中获取 token'}
             
@@ -246,6 +255,43 @@ class DiscordOAuthHandler:
             match = re.search(r'[?&]token=([^&\s]+)', input_str)
             if match: return match.group(1)
         return None
+    
+    def _extract_darkknight_from_response(self, response) -> Optional[str]:
+        """从响应中提取 x-zai-darkknight 值"""
+        try:
+            # 尝试从响应头中提取
+            if 'x-zai-darkknight' in response.headers:
+                return response.headers['x-zai-darkknight']
+            
+            # 尝试从响应体中提取（如果是 JSON）
+            try:
+                data = response.json()
+                if isinstance(data, dict):
+                    # 检查常见的字段名
+                    for key in ['darkknight', 'x-zai-darkknight', 'darkKnight', 'x_darkknight']:
+                        if key in data:
+                            return str(data[key])
+            except:
+                pass
+            
+            # 尝试从 HTML 中提取
+            if response.text:
+                # 查找 JavaScript 中的 darkknight 值
+                patterns = [
+                    r'x-zai-darkknight["\']?\s*:\s*["\']([^"\']+)["\']',
+                    r'darkknight["\']?\s*:\s*["\']([^"\']+)["\']',
+                    r'x-zai-darkknight["\']?\s*=\s*["\']([^"\']+)["\']',
+                    r'darkknight["\']?\s*=\s*["\']([^"\']+)["\']',
+                ]
+                for pattern in patterns:
+                    match = re.search(pattern, response.text)
+                    if match:
+                        return match.group(1)
+            
+            return None
+        except Exception as e:
+            print(f"    [!] 提取 darkknight 失败: {e}")
+            return None
 
     def _verify_session(self) -> Optional[Dict]:
         try:

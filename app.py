@@ -99,6 +99,14 @@ def migrate_sqlite_schema():
             if 'stream_conversion_enabled' not in sc_cols:
                 cur.execute("ALTER TABLE system_config ADD COLUMN stream_conversion_enabled BOOLEAN DEFAULT 0")
 
+        # token: add zai_darkknight and darkknight_source columns
+        token_cols = _sqlite_table_columns(cur, 'token')
+        if token_cols:
+            if 'zai_darkknight' not in token_cols:
+                cur.execute("ALTER TABLE token ADD COLUMN zai_darkknight TEXT")
+            if 'darkknight_source' not in token_cols:
+                cur.execute("ALTER TABLE token ADD COLUMN darkknight_source TEXT DEFAULT 'auto'")
+
         # request_log: add missing columns for UI display
         rl_cols = _sqlite_table_columns(cur, 'request_log')
         if rl_cols:
@@ -263,6 +271,8 @@ def get_tokens():
             'image_concurrency': t.image_concurrency,
             'video_concurrency': t.video_concurrency,
             'zai_token': t.zai_token,
+            'zai_darkknight': t.zai_darkknight,
+            'darkknight_source': t.darkknight_source,
             'st': t.discord_token[:10] + '...' # Masked for security? Frontend uses it for edit.
             # Ideally return full ST for edit, or handle separately. Frontend calls edit and pre-fills ST.
             # Let's return full ST for now as admin panel.
@@ -285,6 +295,10 @@ def add_token():
     st = data.get('st')
     if not st:
         return jsonify({'success': False, 'message': 'Missing Discord Token'}), 400
+    
+    # 支持手动输入 darkknight
+    darkknight = data.get('darkknight')
+    darkknight_source = 'manual' if darkknight else 'auto'
         
     token = Token(
         discord_token=st,
@@ -294,17 +308,27 @@ def add_token():
         image_enabled=data.get('image_enabled', True),
         video_enabled=data.get('video_enabled', True),
         image_concurrency=data.get('image_concurrency', -1),
-        video_concurrency=data.get('video_concurrency', -1)
+        video_concurrency=data.get('video_concurrency', -1),
+        zai_darkknight=darkknight,
+        darkknight_source=darkknight_source
     )
     db.session.add(token)
     db.session.commit()
     
-    # Initial refresh
-    success, msg = services.update_token_info(token.id)
-    if not success:
-        token.remark = f"Initial refresh failed: {msg}"
-        db.session.commit()
-        return jsonify({'success': True, 'message': 'Token added but refresh failed: ' + msg})
+    # 如果没有手动提供 darkknight，尝试自动获取
+    if not darkknight:
+        success, msg = services.update_token_info(token.id)
+        if not success:
+            token.remark = f"Initial refresh failed: {msg}"
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Token added but refresh failed: ' + msg})
+    else:
+        # 手动提供了 darkknight，只获取 token
+        success, msg = services.update_token_info(token.id, skip_darkknight=True)
+        if not success:
+            token.remark = f"Token refresh failed: {msg}"
+            db.session.commit()
+            return jsonify({'success': True, 'message': 'Token added but token refresh failed: ' + msg})
         
     return jsonify({'success': True})
 
@@ -791,6 +815,9 @@ def proxy_chat_completions():
             "Authorization": f"Bearer {token.zai_token}",
             "Content-Type": "application/json"
         }
+        # 添加 x-zai-darkknight 请求头
+        if token.zai_darkknight:
+            headers["x-zai-darkknight"] = token.zai_darkknight
 
         zai_payload = dict(payload)
         if zai_stream:
@@ -882,6 +909,9 @@ def proxy_models():
 
         zai_url = "https://zai.is/api/v1/models"
         headers = {"Authorization": f"Bearer {token.zai_token}"}
+        # 添加 x-zai-darkknight 请求头
+        if token.zai_darkknight:
+            headers["x-zai-darkknight"] = token.zai_darkknight
 
         try:
             resp = requests.get(zai_url, headers=headers, timeout=60)

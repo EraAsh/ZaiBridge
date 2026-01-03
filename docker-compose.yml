@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  zai2api:
+  zaibridge:
     build: .
-    container_name: zai2api
+    container_name: zaibridge
     restart: unless-stopped
     ports:
       - "5000:5000"

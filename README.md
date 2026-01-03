@@ -1,8 +1,18 @@
-<h2 align="center"> 注意：zai.is新增 <code>x-zai-darkknight</code> 请求头验证，当前版本已失效。</h2>
+# ZaiBridge
 
-# Zai2API
+ZaiBridge 是一个功能完整的 OpenAI 兼容 API 服务网关。它允许你管理 Discord Token，自动将其转换为 zai.is 的访问凭证，并提供标准的 OpenAI 接口供第三方客户端调用。
 
-Zai2API 是一个功能完整的 OpenAI 兼容 API 服务网关。它允许你管理 Discord Token，自动将其转换为 zai.is 的访问凭证，并提供标准的 OpenAI 接口供第三方客户端调用。
+**作者**: EraAsh
+
+## ✨ 最新更新
+
+### v2.0 - 完整支持 x-zai-darkknight 请求头
+
+- ✅ **修复 x-zai-darkknight 请求头验证**：现已完整支持 zai.is 新增的 `x-zai-darkknight` 请求头验证机制
+- ✅ **自动提取 darkknight 值**：在 OAuth 登录流程中自动提取并存储 `x-zai-darkknight` 值
+- ✅ **代码混淆保护**：新增 `obfuscator.py` 模块，对敏感字符串和 token 进行混淆保护
+- ✅ **增强安全性**：所有敏感信息在日志中自动脱敏显示
+- ✅ **数据库迁移**：自动添加 `zai_darkknight` 字段到现有数据库
 
 ## 轻量化版本
 
@@ -24,10 +34,35 @@ Zai2API 是一个功能完整的 OpenAI 兼容 API 服务网关。它允许你�
 
 ## 快速开始
 
-### 获取discord token
+### 获取 Discord Token
 
-随便在一个群组中发消息，复制其中的Authorization作为discord token
+1. 在 Discord 中按 F12 打开开发者工具
+2. 切换到 "网络" (Network) 标签
+3. 在任意群组发送一条消息
+4. 在网络请求中找到该消息的请求
+5. 在 "请求标头" (Request Headers) 中找到 `Authorization` 字段
+6. 复制该值作为 Discord Token
+
 ![获取discord token](png/获取doscordtoken.png)
+
+**使用方式**：
+- 在管理面板中点击"新增 Token"
+- 粘贴 Discord Token
+- 系统将自动登录 zai.is 并获取 API Token
+- 无需手动提取，完全自动化
+
+### 获取 API Token
+
+1. 访问 [zai.is](https://zai.is) 并使用 Discord 登录
+2. 登录成功后，按 F12 打开开发者工具
+3. 切换到 "网络" (Network) 标签
+4. 刷新页面或进行任意 API 调用
+5. 在网络请求中找到 API 请求
+6. 在 "请求标头" (Request Headers) 中找到：
+   - `Authorization: Bearer <your_token>` - 这是 API Token
+   - `x-zai-darkknight: <your_darkknight>` - 这是 darkknight 值
+
+**注意**：本工具会自动通过 Discord Token 获取 API Token 和 darkknight 值，无需手动提取。
 
 ### 方式一：Docker Compose 部署（推荐）
 
@@ -81,6 +116,63 @@ python app.py
     - 调整 Token 刷新间隔。
 3. **请求日志**：
     - 查看最近的 API 请求记录。
+
+## 技术实现
+
+### Token 获取流程
+
+1. **Discord OAuth 登录**：使用 Discord Token 进行后端 OAuth 登录
+2. **提取 JWT Token**：从 OAuth 回调中提取 zai.is 的 JWT Token
+3. **提取 darkknight 值**：自动从响应中提取 `x-zai-darkknight` 值
+4. **存储到数据库**：将 Token 和 darkknight 值存储到数据库
+5. **API 调用**：在调用 zai.is API 时自动添加 `x-zai-darkknight` 请求头
+
+### 代码混淆保护
+
+项目使用 `obfuscator.py` 模块提供以下保护：
+
+- **字符串混淆**：敏感字符串（如 API 端点、请求头名称）使用 base64 + XOR 混淆
+- **Token 脱敏**：所有 token 在日志中自动脱敏显示
+- **哈希保护**：敏感数据的哈希值用于日志记录
+
+### 数据库结构
+
+```python
+class Token(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), nullable=True)
+    discord_token = db.Column(db.String(512), nullable=False)
+    zai_token = db.Column(db.Text, nullable=True)  # JWT Token
+    zai_darkknight = db.Column(db.String(256), nullable=True)  # x-zai-darkknight 值
+    at_expires = db.Column(db.DateTime, nullable=True)
+    # ... 其他字段
+```
+
+## 常见问题
+
+### Q: 为什么需要 x-zai-darkknight 请求头？
+
+A: zai.is 在近期更新中新增了 `x-zai-darkknight` 请求头验证，这是为了防止未授权的 API 调用。本工具已完整支持该验证机制。
+
+### Q: 如何验证 darkknight 值是否正确？
+
+A: 在管理面板的 Token 列表中，每个 Token 都会显示其 `zai_darkknight` 值。如果该值为空，说明提取失败，需要重新刷新 Token。
+
+### Q: Token 刷新失败怎么办？
+
+A: 请检查以下几点：
+1. Discord Token 是否有效
+2. 网络连接是否正常
+3. 是否需要配置代理
+4. 查看 Token 列表中的错误信息
+
+### Q: 如何提高安全性？
+
+A: 建议：
+1. 定期更换 Discord Token
+2. 使用强密码保护管理面板
+3. 配置 HTTPS 访问
+4. 定期备份数据库
 
 ## Star History
 
