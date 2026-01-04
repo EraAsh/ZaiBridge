@@ -111,6 +111,8 @@ class DiscordOAuthHandler:
     def _get_discord_authorize_url(self) -> Dict[str, Any]:
         """获取 Discord 授权 URL 和参数"""
         try:
+            print(f"    [*] 请求 OAuth 登录 URL: {self.get_oauth_login_url()}")
+            
             # 首先尝试跟随重定向获取最终 URL
             response = self.session.get(
                 self.get_oauth_login_url(),
@@ -118,13 +120,18 @@ class DiscordOAuthHandler:
                 timeout=30
             )
             
+            print(f"    [*] 响应状态码: {response.status_code}")
+            
             # 检查最终 URL 是否包含 Discord 授权信息
             final_url = response.url if hasattr(response, 'url') else response.request.url
+            print(f"    [*] 最终 URL: {final_url}")
             
             # 如果最终 URL 包含 discord.com，说明已经重定向到 Discord
             if 'discord.com' in final_url:
+                print(f"    [+] 成功重定向到 Discord")
                 parsed = urlparse(final_url)
                 params = parse_qs(parsed.query)
+                print(f"    [*] URL 参数: {dict(params)}")
                 return {
                     'authorize_url': final_url,
                     'client_id': params.get('client_id', [''])[0],
@@ -136,6 +143,8 @@ class DiscordOAuthHandler:
             # 如果没有重定向到 Discord，尝试从响应头获取 Location
             if response.status_code in [301, 302, 303, 307, 308]:
                 location = response.headers.get('Location', '')
+                print(f"    [*] 收到重定向 Location: {location}")
+                
                 if location:
                     # 如果 Location 是相对路径，转换为绝对路径
                     if location.startswith('/'):
@@ -143,6 +152,7 @@ class DiscordOAuthHandler:
                     
                     # 检查是否包含 Discord 授权信息
                     if 'discord.com' in location:
+                        print(f"    [+] Location 包含 Discord URL")
                         parsed = urlparse(location)
                         params = parse_qs(parsed.query)
                         return {
@@ -154,11 +164,13 @@ class DiscordOAuthHandler:
                         }
                     
                     # 如果 Location 不是 Discord URL，可能需要再次请求
-                    print(f"    [!] 收到重定向到: {location}")
+                    print(f"    [*] Location 不是 Discord URL，尝试跟随重定向...")
                     response2 = self.session.get(location, allow_redirects=True, timeout=30)
                     final_url2 = response2.url if hasattr(response2, 'url') else response2.request.url
+                    print(f"    [*] 第二次请求最终 URL: {final_url2}")
                     
                     if 'discord.com' in final_url2:
+                        print(f"    [+] 第二次请求成功重定向到 Discord")
                         parsed = urlparse(final_url2)
                         params = parse_qs(parsed.query)
                         return {
@@ -169,8 +181,12 @@ class DiscordOAuthHandler:
                             'state': params.get('state', [''])[0]
                         }
             
+            print(f"    [-] 未能找到 Discord 授权 URL")
             return {'error': f'无法获取授权 URL，状态码: {response.status_code}，最终URL: {final_url}'}
         except Exception as e:
+            print(f"    [!] 异常: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {'error': f'获取授权 URL 失败: {str(e)}'}
     
     def _authorize_discord_app(self, discord_token, client_id, redirect_uri, scope, state) -> Dict[str, Any]:
