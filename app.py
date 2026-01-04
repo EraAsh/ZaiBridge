@@ -182,6 +182,11 @@ scheduler.start()
 
 # --- Routes: Pages ---
 
+@app.route('/health')
+def health_check():
+    """健康检查端点"""
+    return jsonify({'status': 'healthy'}), 200
+
 @app.route('/login')
 def login_page():
     return send_from_directory('static', 'login.html')

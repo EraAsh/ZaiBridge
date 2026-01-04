@@ -111,25 +111,65 @@ class DiscordOAuthHandler:
     def _get_discord_authorize_url(self) -> Dict[str, Any]:
         """获取 Discord 授权 URL 和参数"""
         try:
+            # 首先尝试跟随重定向获取最终 URL
             response = self.session.get(
                 self.get_oauth_login_url(),
-                allow_redirects=False,
+                allow_redirects=True,
                 timeout=30
             )
             
+            # 检查最终 URL 是否包含 Discord 授权信息
+            final_url = response.url if hasattr(response, 'url') else response.request.url
+            
+            # 如果最终 URL 包含 discord.com，说明已经重定向到 Discord
+            if 'discord.com' in final_url:
+                parsed = urlparse(final_url)
+                params = parse_qs(parsed.query)
+                return {
+                    'authorize_url': final_url,
+                    'client_id': params.get('client_id', [''])[0],
+                    'redirect_uri': params.get('redirect_uri', [''])[0],
+                    'scope': params.get('scope', ['identify email'])[0],
+                    'state': params.get('state', [''])[0]
+                }
+            
+            # 如果没有重定向到 Discord，尝试从响应头获取 Location
             if response.status_code in [301, 302, 303, 307, 308]:
                 location = response.headers.get('Location', '')
-                if 'discord.com' in location:
-                    parsed = urlparse(location)
-                    params = parse_qs(parsed.query)
-                    return {
-                        'authorize_url': location,
-                        'client_id': params.get('client_id', [''])[0],
-                        'redirect_uri': params.get('redirect_uri', [''])[0],
-                        'scope': params.get('scope', ['identify email'])[0],
-                        'state': params.get('state', [''])[0]
-                    }
-            return {'error': f'无法获取授权 URL，状态码: {response.status_code}'}
+                if location:
+                    # 如果 Location 是相对路径，转换为绝对路径
+                    if location.startswith('/'):
+                        location = f"{self.base_url}{location}"
+                    
+                    # 检查是否包含 Discord 授权信息
+                    if 'discord.com' in location:
+                        parsed = urlparse(location)
+                        params = parse_qs(parsed.query)
+                        return {
+                            'authorize_url': location,
+                            'client_id': params.get('client_id', [''])[0],
+                            'redirect_uri': params.get('redirect_uri', [''])[0],
+                            'scope': params.get('scope', ['identify email'])[0],
+                            'state': params.get('state', [''])[0]
+                        }
+                    
+                    # 如果 Location 不是 Discord URL，可能需要再次请求
+                    print(f"    [!] 收到重定向到: {location}")
+                    response2 = self.session.get(location, allow_redirects=True, timeout=30)
+                    final_url2 = response2.url if hasattr(response2, 'url') else response2.request.url
+                    
+                    if 'discord.com' in final_url2:
+                        parsed = urlparse(final_url2)
+                        params = parse_qs(parsed.query)
+                        return {
+                            'authorize_url': final_url2,
+                            'client_id': params.get('client_id', [''])[0],
+                            'redirect_uri': params.get('redirect_uri', [''])[0],
+                            'scope': params.get('scope', ['identify email'])[0],
+                            'state': params.get('state', [''])[0]
+                        }
+            
+            return {'error': f'无法获取授权 URL，状态码: {response.status_code}，最终URL: {final_url}'}
         except Exception as e:
             return {'error': f'获取授权 URL 失败: {str(e)}'}
     
